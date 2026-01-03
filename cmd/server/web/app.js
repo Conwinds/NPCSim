@@ -60,6 +60,18 @@ function mod(a, b) {
   return m < 0 ? m + b : m;
 }
 
+// Draw loop (on-demand).
+let redrawPending = false;
+function requestRedraw() {
+  if (redrawPending) return;
+  redrawPending = true;
+  requestAnimationFrame(() => {
+    redrawPending = false;
+    draw();
+  });
+}
+
+
 function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
   canvas.width = Math.floor(window.innerWidth * dpr);
@@ -278,17 +290,6 @@ canvas.addEventListener('wheel', (ev) => {
 
 // Optional: disable context menu (keeps right click available later).
 window.addEventListener('contextmenu', (e) => e.preventDefault());
-
-// Draw loop (on-demand).
-let redrawPending = false;
-function requestRedraw() {
-  if (redrawPending) return;
-  redrawPending = true;
-  requestAnimationFrame(() => {
-    redrawPending = false;
-    draw();
-  });
-}
 
 function draw() {
   // Background
