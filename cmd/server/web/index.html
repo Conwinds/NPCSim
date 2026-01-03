@@ -7,24 +7,19 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <div id="ui">
-      <div id="bar">
-        <div class="title">NPCSim</div>
-        <div class="controls">
-          <label>CX <input id="cx" type="number" value="0" /></label>
-          <label>CY <input id="cy" type="number" value="0" /></label>
-          <label>CZ <input id="cz" type="number" value="0" /></label>
-          <button id="load">Load</button>
-          <span id="status"></span>
-        </div>
-      </div>
+    <canvas id="c"></canvas>
 
-      <div id="main">
-        <canvas id="c"></canvas>
-        <div id="hint">
-          Hover to see local coords. This is a top-down surface snapshot (Type + Height).
-        </div>
+    <!-- Floating HUD: details about the block under the pointer. -->
+    <div id="hud">
+      <div class="hud-title">NPCSim</div>
+      <div id="hud-body">
+        <div class="row"><span class="k">Pointer</span><span id="hudPointer" class="v">—</span></div>
+        <div class="row"><span class="k">Chunk</span><span id="hudChunk" class="v">—</span></div>
+        <div class="row"><span class="k">Local</span><span id="hudLocal" class="v">—</span></div>
+        <div class="row"><span class="k">TopY</span><span id="hudTopY" class="v">—</span></div>
+        <div class="row"><span class="k">Type</span><span id="hudType" class="v">—</span></div>
       </div>
+      <div class="hud-hint">Drag to pan • Wheel to zoom</div>
     </div>
 
     <script src="app.js"></script>

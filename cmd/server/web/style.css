@@ -1,10 +1,10 @@
 :root {
   color-scheme: dark;
   --bg: #0b0f14;
-  --panel: #101724;
+  --panel: rgba(16, 23, 36, 0.92);
   --text: #e6edf3;
   --muted: #9aa4af;
-  --border: #223044;
+  --border: rgba(34, 48, 68, 0.9);
 }
 
 html, body {
@@ -13,88 +13,63 @@ html, body {
   background: var(--bg);
   color: var(--text);
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
-}
-
-#ui {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-#bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--panel);
-}
-
-.title {
-  font-weight: 700;
-  letter-spacing: 0.3px;
-}
-
-.controls {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-input {
-  width: 70px;
-  padding: 6px 8px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: #0c121b;
-  color: var(--text);
-}
-
-button {
-  padding: 7px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: #142033;
-  color: var(--text);
-  cursor: pointer;
-}
-
-button:hover {
-  filter: brightness(1.1);
-}
-
-#status {
-  color: var(--muted);
-  font-size: 12px;
-  min-width: 140px;
-}
-
-#main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
+  overflow: hidden;
 }
 
 canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
   image-rendering: pixelated;
-  border: 1px solid var(--border);
   background: #05070a;
 }
 
-#hint {
-  color: var(--muted);
+#hud {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  min-width: 240px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+  backdrop-filter: blur(8px);
+  user-select: none;
+  pointer-events: none; /* don't steal mouse from canvas */
+}
+
+.hud-title {
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  margin-bottom: 8px;
+}
+
+#hud-body {
+  display: grid;
+  gap: 6px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 62px 1fr;
+  gap: 10px;
+  align-items: baseline;
   font-size: 12px;
+}
+
+.k {
+  color: var(--muted);
+}
+
+.v {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-hint {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--muted);
 }
