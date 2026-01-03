@@ -1,41 +1,55 @@
 // internal/world/world.go
-// Purpose: authoritative world state. Owns chunk cache, entities, and exposes safe APIs.
-//
-// Sections:
-// - Imports
-// - Constants
-// - Types
-// - Constructors
-// - Public API (Get/Set block, spawn, query)
-// - Private helpers
+// Purpose: authoritative world state. Owns chunk storage and exposes safe APIs.
 
 package world
 
-// --- Imports ---
-//
-// TODO
+import (
+  "sync"
 
-// --- Constants ---
-//
-// TODO
+  "github.com/Conwinds/NPCSim/internal/chunk"
+  "github.com/Conwinds/NPCSim/internal/gen"
+)
 
 // --- Types ---
-//
-// TODO: World struct
-// TODO: WorldConfig reference
-// TODO: interfaces to chunk/cache/net hooks
+
+type World struct {
+  seed uint32
+  mu    sync.RWMutex
+  chunks map[chunk.ChunkCoord]*chunk.Chunk
+}
 
 // --- Constructors ---
-//
-// TODO: NewWorld(cfg ...)
+
+func NewWorld(seed uint32) *World {
+  return &World{
+    seed: seed,
+    chunks: make(map[chunk.ChunkCoord]*chunk.Chunk, 256),
+  }
+}
 
 // --- Public API ---
-//
-// TODO: GetBlock / SetBlock (world coords)
-// TODO: EnsureChunkLoaded
-// TODO: Query region for client snapshot
-// TODO: ApplyDeltaBatch
 
-// --- Private helpers ---
-//
-// TODO: coordinate transforms, bookkeeping
+func (w *World) GetOrCreateChunk(c chunk.ChunkCoord) *chunk.Chunk {
+  w.mu.RLock()
+  ch := w.chunks[c]
+  w.mu.RUnlock()
+  if ch != nil {
+    if !ch.TopValid {
+      // Rebuild derived cache on demand.
+      w.mu.RLock() // chunk itself isn't protected; this is fine for now (single-writer design later)
+      ch.RebuildTopCache()
+      w.mu.RUnlock()
+    }
+    return ch
+  }
+
+  // Create under write lock.
+  w.mu.Lock()
+  // Re-check in case of race.
+  if ch = w.chunks[c]; ch == nil {
+    ch = gen.GenerateChunk(c, gen.Context{Seed: w.seed})
+    w.chunks[c] = ch
+  }
+  w.mu.Unlock()
+  return ch
+}
