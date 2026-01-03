@@ -1,0 +1,18 @@
+# Binaries
+/bin/
+/dist/
+
+# Go build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
