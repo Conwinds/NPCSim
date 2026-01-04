@@ -5,6 +5,24 @@
 
 const CW = 32;
 const CD = 32;
+// Isometric projection constants (fixed; zoom handled by camera.zoom).
+// Tile diamond: TILE_W x TILE_H pixels at zoom=1.
+const CH = 32;
+const TILE_W = 16;
+const TILE_H = 8;
+const HALF_W = TILE_W * 0.5;
+const HALF_H = TILE_H * 0.5;
+const H_STEP = 4; // pixels per height level (TopY)
+
+const CHUNK_SHIFT_X = (CD - 1) * HALF_W;
+// Lift the whole chunk so the tallest columns stay within the offscreen canvas.
+const CHUNK_SHIFT_Y = CH * H_STEP + TILE_H;
+
+// Canvas size for a pre-rendered isometric chunk. Sized conservatively to fit cliffs.
+// Width works out to (CW+CD)/2 * TILE_W for CW=CD=32 => 512px.
+const CHUNK_CANVAS_W = ((CW + CD) * 0.5) * TILE_W;
+// Height includes: base iso height + max wall drop + padding.
+const CHUNK_CANVAS_H = ((CW + CD) * HALF_H) + (CH * H_STEP) + (CH * H_STEP) + (TILE_H * 2);
 const BYTES_PER_CHUNK_SNAPSHOT = CW * CD * 2; // TopY + TopType
 
 const canvas = document.getElementById('c');
@@ -98,43 +116,111 @@ function colorForType(t, h) {
   }
 }
 
+function shadeByte(v, f) { return clamp(Math.round(v * f), 0, 255); }
+
 function makeChunkImage(topY, topT) {
-  // Pre-render into a 32x32 offscreen canvas (1px per tile), then scale via drawImage.
+  // Pre-render an isometric chunk into an offscreen canvas (server authoritative).
+  // This runs only on chunk load, so polygon drawing is fine.
+
   const oc = document.createElement('canvas');
-  oc.width = CW;
-  oc.height = CD;
-  const octx = oc.getContext('2d');
+  oc.width = CHUNK_CANVAS_W | 0;
+  oc.height = CHUNK_CANVAS_H | 0;
+  const octx = oc.getContext('2d', { alpha: true });
   octx.imageSmoothingEnabled = false;
 
-  const img = octx.createImageData(CW, CD);
-  const d = img.data;
-  for (let z = 0; z < CD; z++) {
+  // Transparent background; main canvas clears each frame.
+  octx.clearRect(0, 0, oc.width, oc.height);
+
+  // Draw back-to-front: increasing (x+z).
+  for (let s = 0; s <= (CW - 1) + (CD - 1); s++) {
     for (let x = 0; x < CW; x++) {
+      const z = s - x;
+      if (z < 0 || z >= CD) continue;
+
       const i = x + z * CW;
       const h = topY[i];
       const t = topT[i];
 
-      // Parse rgb(...) to bytes cheaply would be annoying; instead use a tiny
-      // hand-coded palette-ish conversion here.
-      // Keep it branchy but small: this runs only on chunk load, not per frame.
-      let r = 0, g = 0, b = 0;
-      if (t === 4) { r = 28; g = 68; b = clamp(120 + h * 3, 0, 255); }
-      else if (t === 1) { r = clamp(30 + h * 3, 0, 255); g = clamp(108 + h * 2, 0, 255); b = 42; }
-      else if (t === 2) { r = clamp(92 + h * 2, 0, 255); g = clamp(70 + h * 2, 0, 255); b = 40; }
-      else if (t === 3) { r = g = b = clamp(78 + h * 3, 0, 255); }
-      else { r = g = b = clamp(18 + h * 2, 0, 255); }
+      // Neighbor heights for visible cliff faces (avoid chunk-border artifacts by clamping to self).
+      const hSouth = (z + 1 < CD) ? topY[i + CW] : h;
+      const hEast  = (x + 1 < CW) ? topY[i + 1] : h;
 
-      const p = (i * 4);
-      d[p + 0] = r;
-      d[p + 1] = g;
-      d[p + 2] = b;
-      d[p + 3] = 255;
+      const wallL = Math.max(0, h - hSouth) * H_STEP; // towards +z
+      const wallR = Math.max(0, h - hEast)  * H_STEP; // towards +x
+
+      // Base color (same mapping as before; runs only at chunk load).
+      let r = 0, g = 0, b = 0;
+      if (t === 4) { r = 28; g = 68; b = clamp(120 + h * 3, 0, 255); }           // water
+      else if (t === 1) { r = clamp(30 + h * 3, 0, 255); g = clamp(108 + h * 2, 0, 255); b = 42; } // grass
+      else if (t === 2) { r = clamp(92 + h * 2, 0, 255); g = clamp(70 + h * 2, 0, 255); b = 40; }  // dirt
+      else if (t === 3) { r = g = b = clamp(78 + h * 3, 0, 255); }                                  // rock
+      else { r = g = b = clamp(18 + h * 2, 0, 255); }                                                // fallback
+
+      // Iso top center (integer coordinates -> crisp).
+      const cx = (CHUNK_SHIFT_X + (x - z) * HALF_W) | 0;
+      const cy = (CHUNK_SHIFT_Y + (x + z) * HALF_H - h * H_STEP) | 0;
+
+      // Points of the top diamond.
+      const nx = cx,           ny = cy - HALF_H;
+      const ex = cx + HALF_W,  ey = cy;
+      const sx = cx,           sy = cy + HALF_H;
+      const wx = cx - HALF_W,  wy = cy;
+
+      // Side bottoms (can differ per face).
+      const syL = sy + wallL;
+      const wyL = wy + wallL;
+
+      const syR = sy + wallR;
+      const eyR = ey + wallR;
+
+      // Left face (towards +z): W-S edge dropped by wallL.
+      if (wallL > 0) {
+        octx.fillStyle = `rgb(${shadeByte(r, 0.70)},${shadeByte(g, 0.70)},${shadeByte(b, 0.70)})`;
+        octx.beginPath();
+        octx.moveTo(wx, wy);
+        octx.lineTo(sx, sy);
+        octx.lineTo(sx, syL);
+        octx.lineTo(wx, wyL);
+        octx.closePath();
+        octx.fill();
+      }
+
+      // Right face (towards +x): E-S edge dropped by wallR.
+      if (wallR > 0) {
+        octx.fillStyle = `rgb(${shadeByte(r, 0.58)},${shadeByte(g, 0.58)},${shadeByte(b, 0.58)})`;
+        octx.beginPath();
+        octx.moveTo(ex, ey);
+        octx.lineTo(sx, sy);
+        octx.lineTo(sx, syR);
+        octx.lineTo(ex, eyR);
+        octx.closePath();
+        octx.fill();
+      }
+
+      // Top face (slightly lighter).
+      octx.fillStyle = `rgb(${shadeByte(r, 1.06)},${shadeByte(g, 1.06)},${shadeByte(b, 1.06)})`;
+      octx.beginPath();
+      octx.moveTo(nx, ny);
+      octx.lineTo(ex, ey);
+      octx.lineTo(sx, sy);
+      octx.lineTo(wx, wy);
+      octx.closePath();
+      octx.fill();
+
+      // Subtle edge lines for readability.
+      octx.strokeStyle = 'rgba(0,0,0,0.18)';
+      octx.beginPath();
+      octx.moveTo(nx, ny);
+      octx.lineTo(ex, ey);
+      octx.lineTo(sx, sy);
+      octx.lineTo(wx, wy);
+      octx.closePath();
+      octx.stroke();
     }
   }
-  octx.putImageData(img, 0, 0);
+
   return oc;
 }
-
 async function fetchChunk(cx, cy, cz) {
   const k = key(cx, cy, cz);
   if (chunkCache.has(k)) return chunkCache.get(k);
@@ -186,29 +272,50 @@ function enforceCacheCap() {
   if (oldestK) chunkCache.delete(oldestK);
 }
 
-function screenToWorld(px, pz) {
+function screenToWorld(px, py) {
+  // Inverse of worldToScreen for the ground plane (y ignored for picking/HUD).
   const cx = window.innerWidth * 0.5;
-  const cz = window.innerHeight * 0.5;
+  const cy = window.innerHeight * 0.5;
+
+  // Convert screen -> iso-space (pre-zoom, camera-centered).
+  const camIsoX = (camera.x - camera.z) * HALF_W;
+  const camIsoY = (camera.x + camera.z) * HALF_H;
+
+  const isoX = (px - cx) / camera.zoom + camIsoX;
+  const isoY = (py - cy) / camera.zoom + camIsoY;
+
+  const a = isoX / HALF_W;
+  const b = isoY / HALF_H;
+
   return {
-    x: (px - cx) / camera.zoom + camera.x,
-    z: (pz - cz) / camera.zoom + camera.z,
+    x: (a + b) * 0.5,
+    z: (b - a) * 0.5,
   };
 }
 
-function worldToScreen(wx, wz) {
+
+function worldToScreen(wx, wz, h = 0) {
   const cx = window.innerWidth * 0.5;
-  const cz = window.innerHeight * 0.5;
+  const cy = window.innerHeight * 0.5;
+
+  const camIsoX = (camera.x - camera.z) * HALF_W;
+  const camIsoY = (camera.x + camera.z) * HALF_H;
+
+  const isoX = (wx - wz) * HALF_W;
+  const isoY = (wx + wz) * HALF_H - h * H_STEP;
+
   return {
-    x: (wx - camera.x) * camera.zoom + cx,
-    z: (wz - camera.z) * camera.zoom + cz,
+    x: (isoX - camIsoX) * camera.zoom + cx,
+    y: (isoY - camIsoY) * camera.zoom + cy,
   };
 }
+
 
 function updateHUD(ev) {
   const rect = canvas.getBoundingClientRect();
   const px = ev.clientX - rect.left;
-  const pz = ev.clientY - rect.top;
-  const w = screenToWorld(px, pz);
+  const py = ev.clientY - rect.top;
+  const w = screenToWorld(px, py);
 
   const wx = Math.floor(w.x);
   const wz = Math.floor(w.z);
@@ -247,8 +354,8 @@ canvas.addEventListener('mousemove', (ev) => {
   if (!isDragging) return;
   const rect = canvas.getBoundingClientRect();
   const px = ev.clientX - rect.left;
-  const pz = ev.clientY - rect.top;
-  const w = screenToWorld(px, pz);
+  const py = ev.clientY - rect.top;
+  const w = screenToWorld(px, py);
   const dx = w.x - dragStart.x;
   const dz = w.z - dragStart.z;
   camera.x = dragStart.camX - dx;
@@ -261,8 +368,8 @@ canvas.addEventListener('mousedown', (ev) => {
   isDragging = true;
   const rect = canvas.getBoundingClientRect();
   const px = ev.clientX - rect.left;
-  const pz = ev.clientY - rect.top;
-  const w = screenToWorld(px, pz);
+  const py = ev.clientY - rect.top;
+  const w = screenToWorld(px, py);
   dragStart = { x: w.x, z: w.z, camX: camera.x, camZ: camera.z };
 });
 
@@ -273,14 +380,14 @@ canvas.addEventListener('wheel', (ev) => {
 
   const rect = canvas.getBoundingClientRect();
   const px = ev.clientX - rect.left;
-  const pz = ev.clientY - rect.top;
-  const before = screenToWorld(px, pz);
+  const py = ev.clientY - rect.top;
+  const before = screenToWorld(px, py);
 
   // Exponential zoom: smooth and consistent.
   const factor = Math.pow(1.0018, -ev.deltaY);
   camera.zoom = clamp(camera.zoom * factor, ZOOM_MIN, ZOOM_MAX);
 
-  const after = screenToWorld(px, pz);
+  const after = screenToWorld(px, py);
   // Keep the world point under the cursor fixed while zooming.
   camera.x += (before.x - after.x);
   camera.z += (before.z - after.z);
@@ -296,47 +403,61 @@ function draw() {
   ctx.fillStyle = '#05070a';
   ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
 
-  // Determine visible world bounds in tile space.
-  const tl = screenToWorld(0, 0);
-  const br = screenToWorld(window.innerWidth, window.innerHeight);
-  const minX = Math.floor(Math.min(tl.x, br.x)) - 1;
-  const maxX = Math.floor(Math.max(tl.x, br.x)) + 1;
-  const minZ = Math.floor(Math.min(tl.z, br.z)) - 1;
-  const maxZ = Math.floor(Math.max(tl.z, br.z)) + 1;
+  // Determine visible world bounds in tile space (approx) by inverting the 4 screen corners.
+  const p0 = screenToWorld(0, 0);
+  const p1 = screenToWorld(window.innerWidth, 0);
+  const p2 = screenToWorld(0, window.innerHeight);
+  const p3 = screenToWorld(window.innerWidth, window.innerHeight);
+
+  const minX = Math.floor(Math.min(p0.x, p1.x, p2.x, p3.x)) - 2;
+  const maxX = Math.floor(Math.max(p0.x, p1.x, p2.x, p3.x)) + 2;
+  const minZ = Math.floor(Math.min(p0.z, p1.z, p2.z, p3.z)) - 2;
+  const maxZ = Math.floor(Math.max(p0.z, p1.z, p2.z, p3.z)) + 2;
 
   const minCX = floorDiv(minX, CW);
   const maxCX = floorDiv(maxX, CW);
   const minCZ = floorDiv(minZ, CD);
   const maxCZ = floorDiv(maxZ, CD);
 
-  // Request visible chunks and draw those that are already in cache.
-  for (let cz = minCZ; cz <= maxCZ; cz++) {
-    for (let cx = minCX; cx <= maxCX; cx++) {
+  // Draw far -> near by chunk diagonal (cx+cz). This avoids overlap glitches in iso.
+  const minS = minCX + minCZ;
+  const maxS = maxCX + maxCZ;
+
+  for (let s = minS; s <= maxS; s++) {
+    for (let cz = minCZ; cz <= maxCZ; cz++) {
+      const cx = s - cz;
+      if (cx < minCX || cx > maxCX) continue;
+
       const k = key(cx, 0, cz);
       const entry = chunkCache.get(k);
+
       const wx0 = cx * CW;
       const wz0 = cz * CD;
-      const s = worldToScreen(wx0, wz0);
-      const px0 = s.x;
-      const pz0 = s.z;
-      const sizePx = CW * camera.zoom;
+
+      // Iso-space top-left where the chunk canvas should be drawn.
+      const isoX0 = (wx0 - wz0) * HALF_W - CHUNK_SHIFT_X;
+      const isoY0 = (wx0 + wz0) * HALF_H - CHUNK_SHIFT_Y;
+
+      // Avoid recomputing camera iso here: use worldToScreen on a dummy and derive cx/cy each call is expensive.
+      // We'll compute screen position directly from iso coords.
+
+      const px0 = Math.round((isoX0 - camIsoX) * camera.zoom + cxScr);
+      const py0 = Math.round((isoY0 - camIsoY) * camera.zoom + cyScr);
+
+      const dw = Math.round(CHUNK_CANVAS_W * camera.zoom);
+      const dh = Math.round(CHUNK_CANVAS_H * camera.zoom);
 
       if (entry) {
         entry.lastUsed = performance.now();
-        ctx.drawImage(entry.imgCanvas, px0, pz0, sizePx, sizePx);
-
-        // Subtle chunk border
-        ctx.strokeStyle = 'rgba(255,255,255,0.07)';
-        ctx.strokeRect(px0, pz0, sizePx, sizePx);
+        ctx.drawImage(entry.imgCanvas, px0, py0, dw, dh);
       } else {
-        // Placeholder while loading
-        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-        ctx.strokeRect(px0, pz0, sizePx, sizePx);
+        // Placeholder while loading: request chunk (no drawing)
         fetchChunk(cx, 0, cz).catch(() => {});
       }
     }
   }
 }
+
 
 // Start centered near origin and prefetch a small ring.
 camera.x = 16;
