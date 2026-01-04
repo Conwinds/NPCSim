@@ -403,6 +403,13 @@ function draw() {
   ctx.fillStyle = '#05070a';
   ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
 
+  // Screen center and camera position in iso-space (used for chunk blitting).
+  const cxScr = window.innerWidth * 0.5;
+  const cyScr = window.innerHeight * 0.5;
+  const camIsoX = (camera.x - camera.z) * HALF_W;
+  const camIsoY = (camera.x + camera.z) * HALF_H;
+
+
   // Determine visible world bounds in tile space (approx) by inverting the 4 screen corners.
   const p0 = screenToWorld(0, 0);
   const p1 = screenToWorld(window.innerWidth, 0);
