@@ -557,27 +557,19 @@ function draw() {
 
       entry.lastUsed = performance.now();
 
-      // world-space chunk bounds
       const wx0 = cx * CW;
       const wz0 = cz * CD;
-      const wx1 = wx0 + CW;
-      const wz1 = wz0 + CD;
+      const s = worldToScreen(wx0, wz0);
 
-      // convert BOTH corners to screen, then round edges
-      const a = worldToScreen(wx0, wz0);
-      const b = worldToScreen(wx1, wz1);
+      // Destination in CSS pixels (snap to integer for crisp blit)
+      const px0 = Math.round(s.x);
+      const py0 = Math.round(s.y);
 
-      const x0 = Math.round(a.x);
-      const y0 = Math.round(a.z);
-      const x1 = Math.round(b.x);
-      const y1 = Math.round(b.z);
+      const sizePxW = Math.round(CW * camera.zoom);
+      const sizePxH = Math.round(CD * camera.zoom);
 
-      const w = x1 - x0;
-      const h = y1 - y0;
-
-      // draw using edge-derived size (prevents gaps)
-      ctx.drawImage(chunkImg, x0, y0, w + 1, h + 1);
-
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(entry.imgCanvas, px0, py0, sizePxW, sizePxH);
 
       // Optional chunk grid at higher zoom (debug)
       if (camera.zoom >= 8) {
