@@ -557,24 +557,32 @@ function draw() {
 
       entry.lastUsed = performance.now();
 
+      // World-space chunk bounds
       const wx0 = cx * CW;
       const wz0 = cz * CD;
-      const s = worldToScreen(wx0, wz0);
+      const wx1 = wx0 + CW;
+      const wz1 = wz0 + CD;
 
-      // Destination in CSS pixels (snap to integer for crisp blit)
-      const px0 = Math.round(s.x);
-      const py0 = Math.round(s.y);
+      // Convert BOTH corners to screen, then round edges
+      const a = worldToScreen(wx0, wz0);
+      const b = worldToScreen(wx1, wz1);
 
-      const sizePxW = Math.round(CW * camera.zoom);
-      const sizePxH = Math.round(CD * camera.zoom);
+      const x0 = Math.round(a.x);
+      const y0 = Math.round(a.y);
+      const x1 = Math.round(b.x);
+      const y1 = Math.round(b.y);
+
+      const w = x1 - x0;
+      const h = y1 - y0;
 
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(entry.imgCanvas, px0, py0, sizePxW, sizePxH);
+      // Draw using edge-derived size (prevents gaps)
+      ctx.drawImage(entry.imgCanvas, x0, y0, w, h);
 
       // Optional chunk grid at higher zoom (debug)
       if (camera.zoom >= 8) {
         ctx.strokeStyle = 'rgba(0,0,0,0.18)';
-        ctx.strokeRect(px0, py0, sizePxW, sizePxH);
+        ctx.strokeRect(x0, y0, w, h);
       }
     }
   }
